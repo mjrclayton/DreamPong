@@ -70,7 +70,7 @@ for these effects are as follows:
       - "but while you're here, you can travel deeper"
     - Between Levels 3 and 4
       - "..."
-      - "deeper into
+      - "deeper into..."
     - Between Levels 4 and 5
       - "..."
       - "dreamworld."
