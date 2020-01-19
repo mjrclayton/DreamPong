@@ -5,6 +5,7 @@ import java.util.Random;
 public class Brick {
     public enum BrickType{STANDARD, HEAVY, EXTRA_HEAVY};
     private int remainingHits;
+    private int points;
     private boolean containsPowerUp;
     private boolean containsDreamBuck;
     private BrickType type;
@@ -15,15 +16,26 @@ public class Brick {
         this.type = type;
         if(type == BrickType.STANDARD){
             this.remainingHits = 1;
+            this.points = 5;
         } else if(type == BrickType.HEAVY){
             this.remainingHits = 2;
+            this.points = 15;
         } else{
             this.remainingHits = 4;
+            this.points = 40;
         }
+    }
+
+    public BrickType getType() {
+        return type;
     }
 
     public int getRemainingHits(){
         return this.remainingHits;
+    }
+
+    public int getPoints(){
+        return this.points;
     }
 
     public void registerHit(){

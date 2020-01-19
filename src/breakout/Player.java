@@ -4,8 +4,14 @@ import java.lang.reflect.Array;
 import java.util.ArrayList;
 
 public class Player {
+    public final int MAX_LEVEL = 5;
+    public final int MAX_SCORE = 9999;
+    public final int MAX_DREAMBUCKS = 999;
+
     private int dreamBucks = 0;
     private int score = 0;
+    private int level = 1;
+    private int lives = 3;
     private Ball ball = new Ball();
     private Paddle paddle = new Paddle();
     private ArrayList<PowerUp.PowerUpType> ownedPowerUps = new ArrayList<PowerUp.PowerUpType>();
@@ -25,7 +31,7 @@ public class Player {
     }
 
     public void setScore(int score){
-        this.score = score;
+        this.score = score <= MAX_SCORE? score : MAX_SCORE;
     }
 
     public int getDreamBucks(){
@@ -33,7 +39,31 @@ public class Player {
     }
 
     public void setDreamBucks(int dreamBucks){
-        this.dreamBucks = dreamBucks;
+        this.dreamBucks = dreamBucks <= MAX_DREAMBUCKS? dreamBucks : MAX_DREAMBUCKS;
+    }
+
+    public int getLevel(){
+        return this.level;
+    }
+
+    public void setLevel(int level){
+        this.level = level <= MAX_LEVEL? level : MAX_LEVEL;
+    }
+
+    public int getLives(){
+        return this.lives;
+    }
+
+    public void setLives(int lives){
+        this.lives = lives;
+    }
+
+    public Paddle getPaddle() {
+        return this.paddle;
+    }
+
+    public Ball getBall(){
+        return this.ball;
     }
 
     public ArrayList<PowerUp.PowerUpType> getOwnedPowerUps(){
