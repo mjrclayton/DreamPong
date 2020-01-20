@@ -148,7 +148,6 @@ public class SceneController extends Application {
     public static final String GAME_OVER_BUTTON = "congratulationshome.png";
     public static final String GAME_OVER_BUTTON_HOVER = "congratulationshomehover.png";
     private ImageView gameOverText;
-    private Button gameOverHome;
     private Scene gameOverScene;
 
     Player player;
@@ -188,8 +187,7 @@ public class SceneController extends Application {
         if(currentScene == levelScene) {
             checkForLevelChange(stage);
             checkLoseLife(stage);
-            //time dependent physics so game doesn't start right away
-            if(secSinceSceneTransition() > 3) {
+            if(secSinceSceneTransition() > 3) { //time dependent physics so game doesn't start right away
                 activeBallMovement(elapsedTime);
             } else {
                 if(secSinceSceneTransition() > 1.5 && player.getLevel() > 1){
@@ -197,8 +195,7 @@ public class SceneController extends Application {
                 }
                 preStartBallMovement(elapsedTime);
             }
-            //physics that are always on
-            checkPowerUpEffects();
+            checkPowerUpEffects(); //physics that are always on
             updateBallPaddleCollisions(); //stickyPaddle powerup handled in here
             updatePaddle(elapsedTime);
             updateBallBoxCollisions();
