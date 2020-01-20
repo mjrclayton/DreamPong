@@ -12,15 +12,12 @@ import javafx.scene.Scene;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.KeyCode;
-import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import javafx.scene.paint.Paint;
 import javafx.scene.control.Button;
 import javafx.scene.text.Font;
 import javafx.stage.Stage;
-
-import java.awt.*;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Scanner;
@@ -88,7 +85,7 @@ public class SceneController extends Application {
     public static final String EXTRA_HEAVY_BRICK_2_HITS = "extraheavybrick_after2hits.png";
     public static final String EXTRA_HEAVY_BRICK_3_HITS = "extraheavybrick_after3hits.png";
     public static final String PU_BIGPADDLE= "pu_bigpaddle.png";
-    public static final String PU_MULTIBALL= "pu_multiball.png";
+    public static final String PU_STICKYPADDLE= "pu_stickypaddle.png";
     public static final String PU_SLOWBALL= "pu_slowball.png";
     public static final String PU_POWERBALL= "pu_powerball.png";
     public static final String PU_LASER= "pu_laser.png";
@@ -102,15 +99,21 @@ public class SceneController extends Application {
     public static final double PADDLE_BOUNCE_RANGE = 120;
     public static final int POWERUP_SPEED = 100;
     public static final double SLOWBALL_SLOWDOWN_PERCENT = 0.75;
+    public static final double STICKY_PADDLE_HOLD_TIME = 2.5;
     private boolean bigPaddleActive;
     private double bigPaddleTimer;
     private boolean slowBallActive;
     private double slowBallTimer;
+    private int stickyPaddleHits;
+    private double stickyPaddleTimer;
+    private boolean stuck;
     private boolean powerBallActive;
     private double powerBallTimer;
     private boolean laserActive;
     private double laserTimer;
-    private Point2D ballVelocity = new Point2D(200, 200);
+    public static final Point2D startingBallVelocity = new Point2D(0, 283);
+    private Point2D ballVelocity = startingBallVelocity;
+    private double preStickyBallVelocity;
     private Group levelRoot;
     private ImageView levelScreenLayout;
     private ImageView paddle;
@@ -124,42 +127,118 @@ public class SceneController extends Application {
     private int paddleSpeed = 0;
     private HashMap<ImageView, Brick> brickMap = new HashMap<ImageView, Brick>();
     private HashMap<ImageView, PowerUp> powerUpMap = new HashMap<ImageView, PowerUp>();
+    private int oldLevel = 1;
+    public final int MAX_LEVEL = 5;
+
+    //congrats screen objects
+    public static final String CONGRATS_TEXT = "congratulationstext.png";
+    public static final String CONGRATS_BUTTON = "congratulationshome.png";
+    public static final String CONGRATS_BUTTON_HOVER = "congratulationshomehover.png";
+    private ImageView congratsText;
+    private Button congratsHome;
+    private Scene congratsScene;
+
+    //Game over screen
+    public static final String GAME_OVER_TEXT = "gameovertext.png";
+    public static final String GAME_OVER_BUTTON = "congratulationshome.png";
+    public static final String GAME_OVER_BUTTON_HOVER = "congratulationshomehover.png";
+    private ImageView gameOverText;
+    private Button gameOverHome;
+    private Scene gameOverScene;
 
     Player player;
 
     @Override
     public void start (Stage stage){
-        /*
-        Need to follow 3 steps within the start method
-            1)Prepare a scene graph with required notes
-            2)Prepare a scene with the required dimensions and add the scene graph to it
-            3)Prepare a stage and add the scene to the stage and display the contents of the stage
-         */
         player = new Player();
-
-        //Steps 1) and 2)
-        startScene = setupStartScene(X_SIZE, Y_SIZE, WHITE_BACKGROUND);
-        rulesScene = setupRulesScene(X_SIZE, Y_SIZE, WHITE_BACKGROUND);
-        levelScene = setupLevelScene(X_SIZE, Y_SIZE, WHITE_BACKGROUND, LEVEL_4, player);
-
-        //Set button properties after creating scene because of null scene bugs that happened if set them in
-        //scene constructing methods
-        setStartScreenButtonProperties(stage);
-        setRulesScreenButtonProperties(stage);
-        setLevelScreenButtonProperties(stage);
-
-        //Step 3)
+        loadScenes();
+        initializeButtons(stage);
         stage.setTitle(STAGE_TITLE);
         stage.setScene(startScene);
         currentScene = startScene;
         stage.show();
-
-        // attach "game loop" to timeline to play it (basically just calling step() method repeatedly forever)
-        KeyFrame frame = new KeyFrame(Duration.millis(MILLISECOND_DELAY), e -> step(SECOND_DELAY));
+        KeyFrame frame = new KeyFrame(Duration.millis(MILLISECOND_DELAY), e -> step(SECOND_DELAY, stage));
         Timeline animation = new Timeline();
         animation.setCycleCount(Timeline.INDEFINITE);
         animation.getKeyFrames().add(frame);
         animation.play();
+    }
+
+    private void loadScenes(){
+        startScene = setupStartScene(X_SIZE, Y_SIZE, WHITE_BACKGROUND);
+        rulesScene = setupRulesScene(X_SIZE, Y_SIZE, WHITE_BACKGROUND);
+        levelScene = setupLevelScene(X_SIZE, Y_SIZE, WHITE_BACKGROUND, getCurrentLevelFileString(player.getLevel()), player);
+        congratsScene = setupCongratsScene(X_SIZE, Y_SIZE, Color.BLACK);
+        gameOverScene = setupGameOverScene(X_SIZE, Y_SIZE, Color.BLACK);
+    }
+
+    private void initializeButtons(Stage stage){
+        setStartScreenButtonProperties(stage);
+        setRulesScreenButtonProperties(stage);
+        setLevelScreenButtonProperties(stage);
+        setCongratsSceneButtonProperties(stage);
+    }
+
+
+    private void step (double elapsedTime, Stage stage) {
+        if(currentScene == levelScene) {
+            checkForLevelChange(stage);
+            checkLoseLife(stage);
+            //time dependent physics so game doesn't start right away
+            if(secSinceSceneTransition() > 2) {
+                activeBallMovement(elapsedTime);
+            } else {
+                preStartBallMovement(elapsedTime);
+            }
+            //physics that are always on
+            checkPowerUpEffects();
+            updateBallPaddleCollisions(); //stickyPaddle powerup handled in here
+            updatePaddle(elapsedTime);
+            updateBallBoxCollisions();
+            updateBallBrickCollisions();
+            powerUpMovementHandler(elapsedTime);
+        }
+    }
+
+    private void checkLoseLife(Stage stage){
+        if(ball.getBoundsInParent().getMinY() > paddle.getBoundsInParent().getMaxY()){
+            player.setLives(player.getLives() - 1);
+            currentLives.setText(Integer.toString(player.getLives()));
+            ball.setX(paddle.getBoundsInParent().getMinX() + ball.getBoundsInParent().getWidth()/1.65);
+            ball.setY(paddle.getBoundsInParent().getMinY() - ball.getBoundsInParent().getHeight()*2.08);
+            ballVelocity = startingBallVelocity;
+            markerTime = System.currentTimeMillis();
+        }
+        if(player.getLives() == 0){
+            currentScene = gameOverScene;
+            stage.setScene(currentScene);
+        }
+    }
+
+    private void checkForLevelChange(Stage stage){
+        if(player.getLevel() > MAX_LEVEL){
+            currentScene = congratsScene;
+            markerTime = System.currentTimeMillis();
+            stage.setScene(currentScene);
+        }
+        else if(oldLevel != player.getLevel()){
+            levelScene = setupLevelScene(X_SIZE, Y_SIZE, WHITE_BACKGROUND, getCurrentLevelFileString(player.getLevel()), player);
+            oldLevel = player.getLevel();
+            currentScene = levelScene;
+            markerTime = System.currentTimeMillis();
+            resetPowerUps();
+            ballVelocity = startingBallVelocity;
+            stage.setScene(currentScene);
+        }
+    }
+
+    private void checkPowerUpEffects(){
+        if(bigPaddleActive){
+            handleBigPaddlePU();
+        }
+        if(slowBallActive){
+            handleSlowBallPU();
+        }
     }
 
     private void handleBigPaddlePU(){
@@ -167,6 +246,10 @@ public class SceneController extends Application {
         if(bigPaddleTimer < 0){
             scaleImage(paddle, ONE_THIRD_SCALEDOWN);
             bigPaddleActive = false;
+            if(stuck){
+                ensureBallWithinPaddle();
+                ballVelocity = startingBallVelocity;
+            }
         }
     }
 
@@ -174,13 +257,15 @@ public class SceneController extends Application {
         slowBallTimer -= (1.0/60);
         if(slowBallTimer < 0){
             ballVelocity = ballVelocityScale(ballVelocity, 1/SLOWBALL_SLOWDOWN_PERCENT);
+            if(stuck){
+                preStickyBallVelocity *= (1/SLOWBALL_SLOWDOWN_PERCENT);
+            }
             slowBallActive = false;
         }
     }
 
     private Point2D ballVelocityScale(Point2D point, double scale){
         Double angleInRadians = Math.atan(point.getY()/point.getX());
-        System.out.println(angleInRadians * 1/(3.14158/180));
         double velocityMagnitude = Math.sqrt(point.getX() * point.getX()
                 + ballVelocity.getY() * ballVelocity.getY());
         double newVelocityMagnitude = velocityMagnitude * scale;
@@ -196,8 +281,12 @@ public class SceneController extends Application {
     }
 
     private void activeBallMovement(double elapsedTime){
-        ball.setX(ball.getX() - ballVelocity.getX() * elapsedTime);
-        ball.setY(ball.getY() - ballVelocity.getY() * elapsedTime);
+        if(!stuck) {
+            ball.setX(ball.getX() - ballVelocity.getX() * elapsedTime);
+            ball.setY(ball.getY() - ballVelocity.getY() * elapsedTime);
+        } else{
+            preStartBallMovement(elapsedTime);
+        }
     }
 
     private void preStartBallMovement(double elapsedTime){
@@ -220,11 +309,53 @@ public class SceneController extends Application {
                 break;
             }
         }
+        if(brickGrid.getChildren().isEmpty()){
+            player.setLevel(player.getLevel() + 1);
+        }
     }
 
     private void updateBallPaddleCollisions(){
         if(ball.getBoundsInParent().intersects(paddle.getBoundsInParent())){
-            handleBallPaddleCollision(ball, paddle);
+            if(stickyPaddleHits <= 0) {
+                handleBallPaddleCollision(ball, paddle);
+            } if(stickyPaddleHits > 0){
+                stuck = true;
+                handleBallStickyPaddleCollision(ball, paddle);
+            }
+        } else{
+            preStickyBallVelocity = Math.sqrt(ballVelocity.getX() * ballVelocity.getX()
+                    + ballVelocity.getY() * ballVelocity.getY());
+        }
+    }
+
+    private void handleBallStickyPaddleCollision(ImageView ball, ImageView paddle){
+        ensureBallWithinPaddle();
+        double newX, newY;
+        if(stickyPaddleTimer > 0){
+            newX = 0;
+            newY = 0;
+            stickyPaddleTimer -= (1.0/60);
+        } else{
+            player.setScore(player.getScore() + 5);
+            currentScore.setText(Integer.toString(player.getScore()));
+            newX = 0;
+            newY = preStickyBallVelocity;
+            stickyPaddleHits--;
+            stuck = false;
+            stickyPaddleTimer = STICKY_PADDLE_HOLD_TIME;
+        }
+        ballVelocity = new Point2D(newX, newY);
+    }
+
+    private void ensureBallWithinPaddle(){
+        if(ball.getBoundsInParent().getMaxX() > paddle.getBoundsInParent().getMaxX()){
+            ball.setX(ball.getX() - (ball.getBoundsInParent().getMaxX() - paddle.getBoundsInParent().getMaxX()));
+        }
+        if(ball.getBoundsInParent().getMinX() < paddle.getBoundsInParent().getMinX()){
+            ball.setX(ball.getX() + (paddle.getBoundsInParent().getMinX() - ball.getBoundsInParent().getMinX()));
+        }
+        if(ball.getBoundsInParent().getMinY() > paddle.getBoundsInParent().getMaxY()){
+            ball.setY(ball.getY() + (paddle.getBoundsInParent().getMaxY() - ball.getBoundsInParent().getMinY()));
         }
     }
 
@@ -256,41 +387,23 @@ public class SceneController extends Application {
         }
     }
 
-
-    private void step (double elapsedTime) {
-        if(currentScene == levelScene) {
-            //powerups affect checks
-            if(bigPaddleActive){
-                handleBigPaddlePU();
-            }
-            if(slowBallActive){
-                handleSlowBallPU();
-            }
-            //time dependent physics so game doesn't start right away
-            if(secSinceSceneTransition() > 2) {
-                activeBallMovement(elapsedTime);
-            } else {
-                preStartBallMovement(elapsedTime);
-            }
-            //physics that are always on
-            updatePaddle(elapsedTime);
-            updateBallPaddleCollisions();
-            updateBallBoxCollisions();
-            updateBallBrickCollisions();
-            powerUpMovementHandler(elapsedTime);
-
-        }
-    }
-
     private void activatePowerUp(PowerUp pu){
         if(pu.getType() == PowerUp.PowerUpType.BIG_PADDLE){
             scaleImage(paddle, 1.5/3);
+            if(stuck){
+                ensureBallWithinPaddle();
+            }
             bigPaddleActive = true;
             bigPaddleTimer = 10;
-        } else if(pu.getType() == PowerUp.PowerUpType.MULTI_BALL){
-
+        } else if(pu.getType() == PowerUp.PowerUpType.STICKY_PADDLE){
+            stickyPaddleHits = 3;
+            stickyPaddleTimer = STICKY_PADDLE_HOLD_TIME;
         } else if(pu.getType() == PowerUp.PowerUpType.SLOW_BALL){
-            ballVelocity = ballVelocityScale(ballVelocity, SLOWBALL_SLOWDOWN_PERCENT);
+            if(! slowBallActive) {
+                ballVelocity = ballVelocityScale(ballVelocity, SLOWBALL_SLOWDOWN_PERCENT);
+            } if(stuck){
+                preStickyBallVelocity = preStickyBallVelocity * SLOWBALL_SLOWDOWN_PERCENT;
+            }
             slowBallActive = true;
             slowBallTimer = 10;
         } else if(pu.getType() == PowerUp.PowerUpType.POWER_BALL){
@@ -346,8 +459,8 @@ public class SceneController extends Application {
         Image puImage;
         if(pu.getType() == PowerUp.PowerUpType.BIG_PADDLE){
             puImage = createImageFromResourceStream(PU_BIGPADDLE);
-        } else if(pu.getType() == PowerUp.PowerUpType.MULTI_BALL){
-            puImage = createImageFromResourceStream(PU_MULTIBALL);
+        } else if(pu.getType() == PowerUp.PowerUpType.STICKY_PADDLE){
+            puImage = createImageFromResourceStream(PU_STICKYPADDLE);
         } else if(pu.getType() == PowerUp.PowerUpType.SLOW_BALL){
             puImage = createImageFromResourceStream(PU_SLOWBALL);
         } else if(pu.getType() == PowerUp.PowerUpType.POWER_BALL){
@@ -399,10 +512,11 @@ public class SceneController extends Application {
         //where the ball hits the paddle
         double velocityMagnitude = Math.sqrt(ballVelocity.getX() * ballVelocity.getX()
                 + ballVelocity.getY() * ballVelocity.getY());
+        double newX, newY;
         double returnAngle = 60 - ((getCenterPoint(ball).getX() - paddle.getBoundsInParent().getMinX()) * PADDLE_BOUNCE_RANGE
                 / (paddle.getBoundsInParent().getWidth()));
-        double newX = velocityMagnitude * Math.sin(returnAngle * (3.14159/180)); //degrees -> radians
-        double newY = velocityMagnitude * Math.cos(returnAngle * (3.14159/180)); //degress -> to radians
+        newX = velocityMagnitude * Math.sin(returnAngle * (3.14159 / 180)); //degrees -> radians
+        newY = velocityMagnitude * Math.cos(returnAngle * (3.14159 / 180)); //degress -> to radians
         ballVelocity = new Point2D(newX, newY);
     }
 
@@ -428,6 +542,46 @@ public class SceneController extends Application {
         else if (code == KeyCode.A) {
             paddleSpeed = -150;
         }
+        else if(code.isDigitKey() && Integer.parseInt(code.getChar()) != 0){
+            handleDigitInput(code);
+        }
+        else if(code == KeyCode.R){
+            handleReset();
+        }
+        else if(code == KeyCode.L){
+            handleLCheat();
+        }
+    }
+
+    private void handleDigitInput(KeyCode code){
+        if(Integer.parseInt(code.getChar()) <= MAX_LEVEL) {
+            player.setLevel(Integer.parseInt(code.getChar()));
+        }
+        else{
+            player.setLevel(MAX_LEVEL);
+        }
+        oldLevel = MAX_LEVEL + 1; //this will cause the step function to load a new lever
+    }
+
+    private void handleLCheat(){
+        player.setLives(player.getLives()+1);
+        currentLives.setText(Integer.toString(player.getLives()));
+    }
+
+    private void handleReset(){
+        ball.setX(paddle.getBoundsInParent().getMinX() + ball.getBoundsInParent().getWidth()/1.65);
+        ball.setY(paddle.getBoundsInParent().getMinY() - ball.getBoundsInParent().getHeight()*2.08);
+        ballVelocity = startingBallVelocity;
+        markerTime = System.currentTimeMillis();
+        resetPowerUps();
+    }
+
+    private void resetPowerUps(){
+        bigPaddleTimer = 0;
+        slowBallTimer = 0;
+        stickyPaddleHits = 0;
+        stickyPaddleTimer = 0;
+        stuck = false;
     }
 
     private void handleKeyReleasedInput (KeyCode code) {
@@ -450,46 +604,82 @@ public class SceneController extends Application {
 
     private Scene setupStartScene(int width, int height, Paint background){
         Group root = new Group();
-
-        titleScreenTitle = createImageViewAndPlace(TITLE_SCREEN_TITLE, width, height, ONE_THIRD_SCALEDOWN, TRANSLATE_NONE, ONE_SIXTH_TRANSLATE);
-        titleScreenCloud1 = createImageViewAndPlace(TITLE_SCREEN_CLOUD, width, height, ONE_THIRD_SCALEDOWN, ONE_THIRD_TRANSLATE, TRANSLATE_NONE);
-        titleScreenCloud2 = createImageViewAndPlace(TITLE_SCREEN_CLOUD, width, height, ONE_THIRD_SCALEDOWN, -ONE_THIRD_TRANSLATE, ONE_THIRD_TRANSLATE);
-        titleScreenPlay = createButtonFromImageAndPlace(TITLE_SCREEN_PLAY, width, height, ONE_THIRD_SCALEDOWN, TRANSLATE_NONE, -ONE_TWELVETH_TRANSLATE);
-        titleScreenStore = createButtonFromImageAndPlace(TITLE_SCREEN_STORE, width, height, ONE_THIRD_SCALEDOWN, TRANSLATE_NONE,
-                -(ONE_SIXTH_TRANSLATE + ONE_FIFTIETH_TRANSLATE));
-        titleScreenRules = createButtonFromImageAndPlace(TITLE_SCREEN_RULES, width, height, ONE_THIRD_SCALEDOWN, TRANSLATE_NONE,
-                -(ONE_SIXTH_TRANSLATE + ONE_TWELVETH_TRANSLATE + (2*ONE_FIFTIETH_TRANSLATE)));
-        titleScreenSignature = createImageViewAndPlace(TITLE_SCREEN_SIGNATURE, width, height, ONE_THIRD_SCALEDOWN, TRANSLATE_NONE, -ALMOST_HALF_TRANSLATE);
-
+        createAndPlaceStartScreenNodes(width, height);
         ImageView[] startScreenImageViews = new ImageView[]{titleScreenTitle, titleScreenCloud1, titleScreenCloud2, titleScreenSignature};
         Button[] startScreenButtons = new Button[]{titleScreenPlay, titleScreenStore, titleScreenRules};
-
         root.getChildren().addAll(startScreenImageViews);
         root.getChildren().addAll(startScreenButtons);
-
-
         Scene scene = new Scene(root, width, height, background);
         return scene;
     }
 
+    private void createAndPlaceStartScreenNodes(int width, int height){
+        titleScreenTitle = createImageViewAndPlace(TITLE_SCREEN_TITLE, width, height, ONE_THIRD_SCALEDOWN,
+                TRANSLATE_NONE, ONE_SIXTH_TRANSLATE);
+        titleScreenCloud1 = createImageViewAndPlace(TITLE_SCREEN_CLOUD, width, height, ONE_THIRD_SCALEDOWN,
+                ONE_THIRD_TRANSLATE, TRANSLATE_NONE);
+        titleScreenCloud2 = createImageViewAndPlace(TITLE_SCREEN_CLOUD, width, height, ONE_THIRD_SCALEDOWN,
+                -ONE_THIRD_TRANSLATE, ONE_THIRD_TRANSLATE);
+        titleScreenPlay = createButtonFromImageAndPlace(TITLE_SCREEN_PLAY, width, height, ONE_THIRD_SCALEDOWN,
+                TRANSLATE_NONE, -ONE_TWELVETH_TRANSLATE);
+        titleScreenStore = createButtonFromImageAndPlace(TITLE_SCREEN_STORE, width, height, ONE_THIRD_SCALEDOWN, TRANSLATE_NONE,
+                -(ONE_SIXTH_TRANSLATE + ONE_FIFTIETH_TRANSLATE));
+        titleScreenRules = createButtonFromImageAndPlace(TITLE_SCREEN_RULES, width, height, ONE_THIRD_SCALEDOWN, TRANSLATE_NONE,
+                -(ONE_SIXTH_TRANSLATE + ONE_TWELVETH_TRANSLATE + (2*ONE_FIFTIETH_TRANSLATE)));
+        titleScreenSignature = createImageViewAndPlace(TITLE_SCREEN_SIGNATURE, width, height, ONE_THIRD_SCALEDOWN,
+                TRANSLATE_NONE, -ALMOST_HALF_TRANSLATE);
+    }
+
     private Scene setupRulesScene(int width, int height, Paint background){
         Group root = new Group();
-
         rulesScreenText = createImageViewAndPlace(RULES_SCREEN_TEXT, width, height, ONE_THIRD_SCALEDOWN, TRANSLATE_NONE,
                 TRANSLATE_NONE);
         rulesScreenBackButton = createButtonFromImageAndPlace(BACK_BUTTON, width, height, ONE_THIRD_SCALEDOWN,
                 -(1.9/5.0), -(2.1/5.0));
-
         root.getChildren().add(rulesScreenText);
         root.getChildren().add(rulesScreenBackButton);
+        Scene scene = new Scene(root, width, height, background);
+        return scene;
+    }
 
+    private Scene setupCongratsScene(int width, int height, Paint background){
+        Group root = new Group();
+        congratsText = createImageViewAndPlace(CONGRATS_TEXT, width, height, ONE_THIRD_SCALEDOWN, TRANSLATE_NONE,
+                TRANSLATE_NONE);
+        congratsHome = createButtonFromImageAndPlace(CONGRATS_BUTTON, width, height, ONE_THIRD_SCALEDOWN, (1.0/25),
+                -(1.0/4.0));
+        root.getChildren().add(congratsText);
+        root.getChildren().add(congratsHome);
+        Scene scene = new Scene(root, width, height, background);
+        return scene;
+    }
+
+    private Scene setupGameOverScene(int width, int height, Paint background){
+        Group root = new Group();
+        gameOverText = createImageViewAndPlace(GAME_OVER_TEXT, width, height, ONE_THIRD_SCALEDOWN, TRANSLATE_NONE,
+                TRANSLATE_NONE);
+        root.getChildren().add(gameOverText);
         Scene scene = new Scene(root, width, height, background);
         return scene;
     }
 
     private Scene setupLevelScene(int width, int height, Paint background, String level, Player player){
-        //TOO LONG
         levelRoot = new Group();
+        createAndPlaceLevelScreenNodes(width, height);
+        loadLevel(brickGrid, level);
+        Label[] levelScreenLabels = new Label[]{currentLevel, currentScore, currentDreamBucks, currentLives};
+        ImageView[] levelScreenImages = new ImageView[]{levelScreenLayout, paddle, ball};
+        levelRoot.getChildren().addAll(levelScreenImages);
+        levelRoot.getChildren().add(levelScreenMenuButton);
+        levelRoot.getChildren().add(brickGrid);
+        levelRoot.getChildren().addAll(levelScreenLabels);
+        Scene scene = new Scene(levelRoot, width, height, background);
+        scene.setOnKeyPressed(e -> handleKeyPressedInput(e.getCode()));
+        scene.setOnKeyReleased(e -> handleKeyReleasedInput(e.getCode()));
+        return scene;
+    }
+
+    private void createAndPlaceLevelScreenNodes(int width, int height){
         levelScreenLayout = createImageViewAndPlace(LEVEL_SCREEN_LAYOUT, width, height, ONE_THIRD_SCALEDOWN, TRANSLATE_NONE,
                 TRANSLATE_NONE);
         levelScreenMenuButton = createButtonFromImageAndPlace(LEVEL_SCREEN_MENU_BUTTON, width, height, ONE_THIRD_SCALEDOWN*.66,
@@ -497,30 +687,11 @@ public class SceneController extends Application {
         brickGrid = createAndAlignBrickGrid(width, height);
         paddle = createImageViewAndPlace(player.getPaddle().getPaddleImg(), width, height, ONE_THIRD_SCALEDOWN, (1.0/9.0), -(1.5/5.0));
         ball = createImageViewAndPlace(player.getBall().getBallImg(), width, height, ONE_THIRD_SCALEDOWN, (1.0/9.0), -(1.387/5.0));
-        loadLevel(brickGrid, level);
         currentLives = createAndAlignLabel(player.getLives(), 340, 312);
         currentLevel = createAndAlignLabel(player.getLevel(), 340, 404);
         currentScore = createAndAlignLabel(player.getScore(), 330, 499);
         currentDreamBucks = createAndAlignLabel(player.getDreamBucks(), 195, 552);
-
-        Label[] levelScreenLabels = new Label[]{currentLevel, currentScore, currentDreamBucks, currentLives};
-        ImageView[] levelScreenImages = new ImageView[]{levelScreenLayout, paddle, ball};
-
-        levelRoot.getChildren().addAll(levelScreenImages);
-        levelRoot.getChildren().add(levelScreenMenuButton);
-        levelRoot.getChildren().add(brickGrid);
-        levelRoot.getChildren().addAll(levelScreenLabels);
-
-        Scene scene = new Scene(levelRoot, width, height, background);
-        scene.setOnMouseClicked(e -> {
-            System.out.println("X: " + e.getX());
-            System.out.println("Y: " + e.getY());
-        });
-        scene.setOnKeyPressed(e -> handleKeyPressedInput(e.getCode()));
-        scene.setOnKeyReleased(e -> handleKeyReleasedInput(e.getCode()));
-        return scene;
     }
-
 
 
     private ImageView createImageViewAndPlace(String imageName, int sceneWidth, int sceneHeight, double scale, double translateWidthScale,
@@ -592,13 +763,17 @@ public class SceneController extends Application {
                     ImageView tempImageView = new ImageView(image);
                     scaleImage(tempImageView, ONE_THIRD_SCALEDOWN);
                     brickMap.put(tempImageView, new Brick(brickTypes[currInt - 1]));
-                    grid.setConstraints(tempImageView, j, i);
-                    grid.setHalignment(tempImageView, HPos.CENTER);
-                    grid.setValignment(tempImageView, VPos.CENTER);
+                    alignProperlyInCell(tempImageView, grid, j, i);
                     grid.getChildren().add(tempImageView);
                 }
             }
         }
+    }
+
+    private void alignProperlyInCell(ImageView tempImageView, GridPane grid, int col, int row){
+        grid.setConstraints(tempImageView, col, row);
+        grid.setHalignment(tempImageView, HPos.CENTER);
+        grid.setValignment(tempImageView, VPos.CENTER);
     }
 
     private void setStartScreenButtonProperties(Stage stage){
@@ -607,6 +782,15 @@ public class SceneController extends Application {
         setButtonHoverPropery(titleScreenRules, TITLE_SCREEN_RULES, TITLE_SCREEN_RULES_HOVER);
         setButtonSceneTransition(titleScreenRules, rulesScene, stage);
         setButtonSceneTransition(titleScreenPlay, levelScene, stage);
+    }
+
+    private void setCongratsSceneButtonProperties(Stage stage){
+        setButtonHoverPropery(congratsHome, CONGRATS_BUTTON, CONGRATS_BUTTON_HOVER);
+        setButtonSceneTransitionReset(congratsHome, startScene, stage);
+    }
+
+    private String getCurrentLevelFileString(int playerLevel){
+        return new String("Level" + Integer.toString(playerLevel) + ".txt");
     }
 
     private void setRulesScreenButtonProperties(Stage stage){
@@ -633,6 +817,17 @@ public class SceneController extends Application {
             stage.setScene(newScene);
             currentScene = newScene;
             markerTime = System.currentTimeMillis();
+        });
+    }
+
+    private void setButtonSceneTransitionReset(Button button, Scene newScene, Stage stage){
+        button.setOnAction(value -> {
+            stage.setScene(newScene);
+            currentScene = newScene;
+            markerTime = System.currentTimeMillis();
+            player.setLevel(1);
+            resetPowerUps();
+            ballVelocity = startingBallVelocity;
         });
     }
 

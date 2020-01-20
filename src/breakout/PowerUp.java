@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.Random;
 
 public class PowerUp {
-    public enum PowerUpType{BIG_PADDLE, SLOW_BALL, MULTI_BALL, POWER_BALL, LASER};
+    public enum PowerUpType{BIG_PADDLE, SLOW_BALL, STICKY_PADDLE, POWER_BALL, LASER};
     private int points = 30;
 
     private PowerUpType type;

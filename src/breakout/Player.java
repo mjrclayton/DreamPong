@@ -4,8 +4,9 @@ import java.lang.reflect.Array;
 import java.util.ArrayList;
 
 public class Player {
-    public final int MAX_LEVEL = 5;
+    public final int MAX_LEVEL = 6;
     public final int MAX_SCORE = 9999;
+    public final int MIN_SCORE = 0;
     public final int MAX_DREAMBUCKS = 999;
 
     private int dreamBucks = 0;
@@ -20,7 +21,7 @@ public class Player {
 
     Player(){
         ownedPowerUps.add(PowerUp.PowerUpType.BIG_PADDLE);
-        ownedPowerUps.add(PowerUp.PowerUpType.MULTI_BALL);
+        ownedPowerUps.add(PowerUp.PowerUpType.STICKY_PADDLE);
         ownedPowerUps.add(PowerUp.PowerUpType.SLOW_BALL);
         ownedBalls.add(Ball.BallType.STANDARD);
         ownedPaddles.add(Paddle.PaddleType.STANDARD);
@@ -31,7 +32,11 @@ public class Player {
     }
 
     public void setScore(int score){
-        this.score = score <= MAX_SCORE? score : MAX_SCORE;
+        if(score < MIN_SCORE){
+            this.score = MIN_SCORE;
+        } else{
+            this.score = score <= MAX_SCORE? score : MAX_SCORE;
+        }
     }
 
     public int getDreamBucks(){
