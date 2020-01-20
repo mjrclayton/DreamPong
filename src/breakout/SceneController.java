@@ -20,6 +20,7 @@ import javafx.scene.text.Font;
 import javafx.stage.Stage;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Scanner;
 import javafx.scene.control.Label;
 import javafx.util.Duration;
@@ -74,6 +75,7 @@ public class SceneController extends Application {
 
     //Level Screen Objects
     private Scene levelScene;
+    public static final String LEVEL_SCREEN_NEXT_LEVEL = "nextlevel.png";
     public static final String LEVEL_SCREEN_LAYOUT = "levellayout.png";
     public static final String LEVEL_SCREEN_MENU_BUTTON = "menubutton.png";
     public static final String LEVEL_SCREEN_MENU_BUTTON_HOVER = "menubuttonhover.png";
@@ -89,6 +91,7 @@ public class SceneController extends Application {
     public static final String PU_SLOWBALL= "pu_slowball.png";
     public static final String PU_POWERBALL= "pu_powerball.png";
     public static final String PU_LASER= "pu_laser.png";
+    public static final String DREAMBUCK = "dreambuck.png";
     public static final String LEVEL_1 = "Level1.txt";
     public static final String LEVEL_2 = "Level2.txt";
     public static final String LEVEL_3 = "Level3.txt";
@@ -115,6 +118,7 @@ public class SceneController extends Application {
     private Point2D ballVelocity = startingBallVelocity;
     private double preStickyBallVelocity;
     private Group levelRoot;
+    private ImageView levelScreenNextLevel;
     private ImageView levelScreenLayout;
     private ImageView paddle;
     private ImageView ball;
@@ -127,6 +131,7 @@ public class SceneController extends Application {
     private int paddleSpeed = 0;
     private HashMap<ImageView, Brick> brickMap = new HashMap<ImageView, Brick>();
     private HashMap<ImageView, PowerUp> powerUpMap = new HashMap<ImageView, PowerUp>();
+    private HashSet<ImageView> dbSet = new HashSet<ImageView>();
     private int oldLevel = 1;
     public final int MAX_LEVEL = 5;
 
@@ -167,7 +172,7 @@ public class SceneController extends Application {
     private void loadScenes(){
         startScene = setupStartScene(X_SIZE, Y_SIZE, WHITE_BACKGROUND);
         rulesScene = setupRulesScene(X_SIZE, Y_SIZE, WHITE_BACKGROUND);
-        levelScene = setupLevelScene(X_SIZE, Y_SIZE, WHITE_BACKGROUND, getCurrentLevelFileString(player.getLevel()), player);
+        levelScene = setupLevelScene(X_SIZE, Y_SIZE, WHITE_BACKGROUND, getCurrentLevelFileString(player.getLevel()));
         congratsScene = setupCongratsScene(X_SIZE, Y_SIZE, Color.BLACK);
         gameOverScene = setupGameOverScene(X_SIZE, Y_SIZE, Color.BLACK);
     }
@@ -176,7 +181,6 @@ public class SceneController extends Application {
         setStartScreenButtonProperties(stage);
         setRulesScreenButtonProperties(stage);
         setLevelScreenButtonProperties(stage);
-        setCongratsSceneButtonProperties(stage);
     }
 
 
@@ -185,9 +189,12 @@ public class SceneController extends Application {
             checkForLevelChange(stage);
             checkLoseLife(stage);
             //time dependent physics so game doesn't start right away
-            if(secSinceSceneTransition() > 2) {
+            if(secSinceSceneTransition() > 3) {
                 activeBallMovement(elapsedTime);
             } else {
+                if(secSinceSceneTransition() > 1.5 && player.getLevel() > 1){
+                    levelRoot.getChildren().remove(levelScreenNextLevel);
+                }
                 preStartBallMovement(elapsedTime);
             }
             //physics that are always on
@@ -197,6 +204,7 @@ public class SceneController extends Application {
             updateBallBoxCollisions();
             updateBallBrickCollisions();
             powerUpMovementHandler(elapsedTime);
+            dreambuckMovementHandler(elapsedTime);
         }
     }
 
@@ -222,7 +230,8 @@ public class SceneController extends Application {
             stage.setScene(currentScene);
         }
         else if(oldLevel != player.getLevel()){
-            levelScene = setupLevelScene(X_SIZE, Y_SIZE, WHITE_BACKGROUND, getCurrentLevelFileString(player.getLevel()), player);
+            player.setDreamBucks(player.getDreamBucks()+5);
+            levelScene = setupLevelScene(X_SIZE, Y_SIZE, WHITE_BACKGROUND, getCurrentLevelFileString(player.getLevel()));
             oldLevel = player.getLevel();
             currentScene = levelScene;
             markerTime = System.currentTimeMillis();
@@ -387,6 +396,27 @@ public class SceneController extends Application {
         }
     }
 
+    private void dreambuckMovementHandler(double elapsedTime){
+        ArrayList<Node> levelRootCopy = new ArrayList<Node>(levelRoot.getChildren());
+        for(Node node : levelRootCopy) {
+            Node copy = node;
+            if(dbSet.contains(node)){
+                ((ImageView)node).setY(((ImageView)node).getY() + POWERUP_SPEED * elapsedTime);
+                if(((ImageView)node).getBoundsInParent().intersects(paddle.getBoundsInParent())) {
+                    player.setDreamBucks(player.getDreamBucks() + 1);
+                    currentDreamBucks.setText(Integer.toString(player.getDreamBucks()));
+                    levelRoot.getChildren().remove(copy);
+                    dbSet.remove(node);
+                }
+                if(! brickGrid.getBoundsInParent().contains(node.getBoundsInParent())){
+                    levelRoot.getChildren().remove(copy);
+                    powerUpMap.remove(node);
+                    dbSet.remove(node);
+                }
+            }
+        }
+    }
+
     private void activatePowerUp(PowerUp pu){
         if(pu.getType() == PowerUp.PowerUpType.BIG_PADDLE){
             scaleImage(paddle, 1.5/3);
@@ -430,7 +460,6 @@ public class SceneController extends Application {
 
     private void handleBallBrickCollision(ImageView ball, Node brickNode){
         Brick hitBrickObject = brickMap.get(brickNode);
-        //bounce section
         if(getCenterPoint(ball).getY() < getOverallBrickYBound(brickNode) || getCenterPoint(ball).getY() >
                 getOverallBrickYBound(brickNode) + brickNode.getBoundsInParent().getHeight()){
             ballVelocity = new Point2D(ballVelocity.getX(), -ballVelocity.getY());
@@ -438,19 +467,24 @@ public class SceneController extends Application {
                 getOverallBrickXBound(brickNode) + brickNode.getBoundsInParent().getWidth()){
             ballVelocity = new Point2D(-ballVelocity.getX(), ballVelocity.getY());
         }
-        //destroy brick, powerup section
         hitBrickObject.registerHit();
         if(hitBrickObject.getRemainingHits() == 0) {
             player.setScore(player.getScore() + hitBrickObject.getPoints());
             currentScore.setText(Integer.toString(player.getScore()));
-            if (hitBrickObject.doesContainPowerUp()) {
-                dropPowerUp(brickNode);
-                //START HERE, DROP POWER UP INTO THE GAME, FALLING FROM WHERE BRICK WAS
-            }
+            handleDrops(brickNode, hitBrickObject);
             brickGrid.getChildren().remove(brickNode);
-            brickMap.remove(brickNode);
+            brickMap.remove(brickNode, hitBrickObject);
         } else {
             updateTexture(brickNode, hitBrickObject);
+        }
+    }
+
+    private void handleDrops(Node brickNode, Brick hitBrickObject){
+        if (hitBrickObject.doesContainPowerUp()) {
+            dropPowerUp(brickNode);
+        }
+        if (hitBrickObject.doesContainDreamBuck()){
+            dropDreamBuck(brickNode);
         }
     }
 
@@ -469,11 +503,23 @@ public class SceneController extends Application {
             puImage = createImageFromResourceStream(PU_LASER);
         }
         ImageView puImageView = new ImageView(puImage);
-        scaleImage(puImageView, ONE_THIRD_SCALEDOWN);
-        puImageView.setX(getOverallBrickXBound(brickNode) - brickNode.getBoundsInParent().getWidth()*0.8);
-        puImageView.setY(getOverallBrickYBound(brickNode));
+        formatDrop(brickNode, puImageView);
         powerUpMap.put(puImageView, pu);
         levelRoot.getChildren().add(puImageView);
+    }
+
+    private void dropDreamBuck(Node brickNode){
+        Image dbImage = createImageFromResourceStream(DREAMBUCK);
+        ImageView dbImageView = new ImageView(dbImage);
+        formatDrop(brickNode, dbImageView);
+        dbSet.add(dbImageView);
+        levelRoot.getChildren().add(dbImageView);
+    }
+
+    public void formatDrop(Node brickNode, ImageView dropImageView){
+        scaleImage(dropImageView, ONE_THIRD_SCALEDOWN);
+        dropImageView.setX(getOverallBrickXBound(brickNode) - brickNode.getBoundsInParent().getWidth()*0.8);
+        dropImageView.setY(getOverallBrickYBound(brickNode));
     }
 
     private void updateTexture(Node brickNode, Brick hitBrickObject){
@@ -546,6 +592,9 @@ public class SceneController extends Application {
             handleDigitInput(code);
         }
         else if(code == KeyCode.R){
+            System.out.println("RESET");
+            System.out.println(ball.getX());
+            System.out.println(ball.getY());
             handleReset();
         }
         else if(code == KeyCode.L){
@@ -646,10 +695,7 @@ public class SceneController extends Application {
         Group root = new Group();
         congratsText = createImageViewAndPlace(CONGRATS_TEXT, width, height, ONE_THIRD_SCALEDOWN, TRANSLATE_NONE,
                 TRANSLATE_NONE);
-        congratsHome = createButtonFromImageAndPlace(CONGRATS_BUTTON, width, height, ONE_THIRD_SCALEDOWN, (1.0/25),
-                -(1.0/4.0));
         root.getChildren().add(congratsText);
-        root.getChildren().add(congratsHome);
         Scene scene = new Scene(root, width, height, background);
         return scene;
     }
@@ -663,7 +709,7 @@ public class SceneController extends Application {
         return scene;
     }
 
-    private Scene setupLevelScene(int width, int height, Paint background, String level, Player player){
+    private Scene setupLevelScene(int width, int height, Paint background, String level){
         levelRoot = new Group();
         createAndPlaceLevelScreenNodes(width, height);
         loadLevel(brickGrid, level);
@@ -673,6 +719,9 @@ public class SceneController extends Application {
         levelRoot.getChildren().add(levelScreenMenuButton);
         levelRoot.getChildren().add(brickGrid);
         levelRoot.getChildren().addAll(levelScreenLabels);
+        if(player.getLevel() > 1){
+            levelRoot.getChildren().add(levelScreenNextLevel);
+        }
         Scene scene = new Scene(levelRoot, width, height, background);
         scene.setOnKeyPressed(e -> handleKeyPressedInput(e.getCode()));
         scene.setOnKeyReleased(e -> handleKeyReleasedInput(e.getCode()));
@@ -684,6 +733,8 @@ public class SceneController extends Application {
                 TRANSLATE_NONE);
         levelScreenMenuButton = createButtonFromImageAndPlace(LEVEL_SCREEN_MENU_BUTTON, width, height, ONE_THIRD_SCALEDOWN*.66,
                 -(ONE_THIRD_TRANSLATE + 1.0/100), ONE_THIRD_TRANSLATE);
+        levelScreenNextLevel = createImageViewAndPlace(LEVEL_SCREEN_NEXT_LEVEL, width, height, ONE_THIRD_SCALEDOWN,
+                TRANSLATE_NONE, TRANSLATE_NONE);
         brickGrid = createAndAlignBrickGrid(width, height);
         paddle = createImageViewAndPlace(player.getPaddle().getPaddleImg(), width, height, ONE_THIRD_SCALEDOWN, (1.0/9.0), -(1.5/5.0));
         ball = createImageViewAndPlace(player.getBall().getBallImg(), width, height, ONE_THIRD_SCALEDOWN, (1.0/9.0), -(1.387/5.0));
@@ -782,11 +833,6 @@ public class SceneController extends Application {
         setButtonHoverPropery(titleScreenRules, TITLE_SCREEN_RULES, TITLE_SCREEN_RULES_HOVER);
         setButtonSceneTransition(titleScreenRules, rulesScene, stage);
         setButtonSceneTransition(titleScreenPlay, levelScene, stage);
-    }
-
-    private void setCongratsSceneButtonProperties(Stage stage){
-        setButtonHoverPropery(congratsHome, CONGRATS_BUTTON, CONGRATS_BUTTON_HOVER);
-        setButtonSceneTransitionReset(congratsHome, startScene, stage);
     }
 
     private String getCurrentLevelFileString(int playerLevel){
